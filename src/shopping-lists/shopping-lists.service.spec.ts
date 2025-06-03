@@ -59,7 +59,9 @@ describe('ShoppingListsService', () => {
     }).compile();
 
     service = module.get<ShoppingListsService>(ShoppingListsService);
-    shoppingListRepository = module.get<Repository<ShoppingList>>(getRepositoryToken(ShoppingList));
+    shoppingListRepository = module.get<Repository<ShoppingList>>(
+      getRepositoryToken(ShoppingList)
+    );
   });
 
   afterEach(() => {
@@ -74,21 +76,35 @@ describe('ShoppingListsService', () => {
     it('should create a new shopping list', async () => {
       const user = { id: 1, email: 'test@example.com' } as User;
       const name = 'Test List';
-      const items = [{ name: 'Milk', quantity: 1, bought: false, category: '', store: '' }];
+      const items = [
+        { name: 'Milk', quantity: 1, bought: false, category: '', store: '' },
+      ];
 
       const createdList = { id: 1, name, user, items };
-      const transformedItems = items.map(item => ({ ...item, promotions: [] }));
+      const transformedItems = items.map((item) => ({
+        ...item,
+        promotions: [],
+      }));
       const expectedResult = { id: 1, name, user, items: transformedItems };
 
       mockShoppingListRepository.create.mockReturnValue(createdList);
       mockShoppingListRepository.save.mockResolvedValue(createdList);
-      mockPromotionsService.getPromotionsForList.mockResolvedValue(transformedItems);
+      mockPromotionsService.getPromotionsForList.mockResolvedValue(
+        transformedItems
+      );
 
       const result = await service.create(user, name, items);
       expect(result).toEqual(expectedResult);
-      expect(mockShoppingListRepository.create).toHaveBeenCalledWith({ name, user });
-      expect(mockShoppingListRepository.save).toHaveBeenCalledWith(expect.objectContaining({ name, user, items }));
-      expect(mockPromotionsService.getPromotionsForList).toHaveBeenCalledWith(items);
+      expect(mockShoppingListRepository.create).toHaveBeenCalledWith({
+        name,
+        user,
+      });
+      expect(mockShoppingListRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({ name, user, items })
+      );
+      expect(mockPromotionsService.getPromotionsForList).toHaveBeenCalledWith(
+        items
+      );
     });
   });
 
@@ -100,16 +116,22 @@ describe('ShoppingListsService', () => {
         { id: 2, name: 'List 2', user, items: [], itemsSerialized: [] },
       ];
       const sharedLists = [
-        { id: 3, name: 'Shared List 1', user: { id: 2 }, items: [], itemsSerialized: [] },
+        {
+          id: 3,
+          name: 'Shared List 1',
+          user: { id: 2 },
+          items: [],
+          itemsSerialized: [],
+        },
       ];
 
-      const transformedOwnLists = ownLists.map(list => ({
+      const transformedOwnLists = ownLists.map((list) => ({
         id: list.id,
         name: list.name,
         user: list.user,
         items: [],
       }));
-      const transformedSharedLists = sharedLists.map(list => ({
+      const transformedSharedLists = sharedLists.map((list) => ({
         id: list.id,
         name: list.name,
         user: list.user,
@@ -121,12 +143,17 @@ describe('ShoppingListsService', () => {
       mockPromotionsService.getPromotionsForList.mockResolvedValue([]);
 
       const result = await service.findAll(user);
-      expect(result).toEqual([...transformedOwnLists, ...transformedSharedLists]);
+      expect(result).toEqual([
+        ...transformedOwnLists,
+        ...transformedSharedLists,
+      ]);
       expect(mockShoppingListRepository.find).toHaveBeenCalledWith({
         where: { user: { id: user.id } },
       });
       expect(mockSharedListsService.getSharedLists).toHaveBeenCalledWith(user);
-      expect(mockPromotionsService.getPromotionsForList).toHaveBeenCalledTimes(3); // Dla każdej listy
+      expect(mockPromotionsService.getPromotionsForList).toHaveBeenCalledTimes(
+        3
+      ); // Dla każdej listy
     });
   });
 });

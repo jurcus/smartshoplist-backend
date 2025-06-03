@@ -54,9 +54,17 @@ describe('UsersController', () => {
       const registeredUser = { id: 1, ...userData };
       mockUsersService.register.mockResolvedValue(registeredUser);
 
-      const result = await controller.register(userData.name, userData.email, userData.password);
+      const result = await controller.register(
+        userData.name,
+        userData.email,
+        userData.password
+      );
       expect(result).toEqual(registeredUser);
-      expect(mockUsersService.register).toHaveBeenCalledWith(userData.name, userData.email, userData.password);
+      expect(mockUsersService.register).toHaveBeenCalledWith(
+        userData.name,
+        userData.email,
+        userData.password
+      );
     });
   });
 
@@ -66,9 +74,15 @@ describe('UsersController', () => {
       const loginResponse = { access_token: 'jwt-token' };
       mockAuthService.login.mockResolvedValue(loginResponse);
 
-      const result = await controller.login(loginData.email, loginData.password);
+      const result = await controller.login(
+        loginData.email,
+        loginData.password
+      );
       expect(result).toEqual(loginResponse);
-      expect(mockAuthService.login).toHaveBeenCalledWith(loginData.email, loginData.password);
+      expect(mockAuthService.login).toHaveBeenCalledWith(
+        loginData.email,
+        loginData.password
+      );
     });
   });
 });

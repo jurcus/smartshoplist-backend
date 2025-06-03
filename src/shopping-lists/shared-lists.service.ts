@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { SharedList } from '../entities/shared-list.entity';
@@ -13,7 +17,7 @@ export class SharedListsService {
     private sharedListsRepository: Repository<SharedList>,
     @InjectRepository(ShoppingList)
     private shoppingListsRepository: Repository<ShoppingList>,
-    private usersService: UsersService,
+    private usersService: UsersService
   ) {}
 
   async shareList(owner: User, listId: number, email: string): Promise<void> {
@@ -23,7 +27,9 @@ export class SharedListsService {
       relations: ['user'],
     });
     if (!shoppingList) {
-      throw new NotFoundException('Shopping list not found or you are not the owner');
+      throw new NotFoundException(
+        'Shopping list not found or you are not the owner'
+      );
     }
 
     // Znajdź użytkownika, которому udostępniamy listę
@@ -37,7 +43,9 @@ export class SharedListsService {
       where: { shoppingListId: listId, userId: userToShare.id },
     });
     if (existingShare) {
-      throw new ForbiddenException('This user already has access to the shopping list');
+      throw new ForbiddenException(
+        'This user already has access to the shopping list'
+      );
     }
 
     // Utwórz rekord udostępnienia
@@ -62,19 +70,27 @@ export class SharedListsService {
     return sharedLists.map((sharedList) => sharedList.shoppingList);
   }
 
-  async removeSharedAccess(owner: User, listId: number, userId: number): Promise<void> {
+  async removeSharedAccess(
+    owner: User,
+    listId: number,
+    userId: number
+  ): Promise<void> {
     const shoppingList = await this.shoppingListsRepository.findOne({
       where: { id: listId, user: { id: owner.id } },
     });
     if (!shoppingList) {
-      throw new NotFoundException('Shopping list not found or you are not the owner');
+      throw new NotFoundException(
+        'Shopping list not found or you are not the owner'
+      );
     }
 
     const sharedList = await this.sharedListsRepository.findOne({
       where: { shoppingListId: listId, userId },
     });
     if (!sharedList) {
-      throw new NotFoundException('This user does not have access to the shopping list');
+      throw new NotFoundException(
+        'This user does not have access to the shopping list'
+      );
     }
 
     await this.sharedListsRepository.remove(sharedList);

@@ -73,7 +73,8 @@ describe('ShoppingListsController', () => {
     }).compile();
 
     controller = module.get<ShoppingListsController>(ShoppingListsController);
-    shoppingListsService = module.get<ShoppingListsService>(ShoppingListsService);
+    shoppingListsService =
+      module.get<ShoppingListsService>(ShoppingListsService);
     sharedListsService = module.get<SharedListsService>(SharedListsService);
     usersService = module.get<UsersService>(UsersService);
   });

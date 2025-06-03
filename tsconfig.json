@@ -14,14 +14,14 @@
     "skipLibCheck": true,
     "strictNullChecks": true,
     "forceConsistentCasingInFileNames": true,
-    "noImplicitAny": false,
+    "noImplicitAny": false, // Rozważ zmianę na true w przyszłości dla lepszego bezpieczeństwa typów
     "strictBindCallApply": false,
     "noFallthroughCasesInSwitch": false,
-    "esModuleInterop": true, // Dodane: Pomaga w importowaniu modułów CommonJS
+    "esModuleInterop": true,
     "paths": {
-      "*": ["node_modules/*"] // Dodane: Pomaga TypeScriptowi znaleźć moduły
+      "*": ["node_modules/*"]
     }
   },
-  "include": ["src/**/*"], // Dodane: Określa, które pliki TypeScript ma analizować
-  "exclude": ["node_modules", "dist"] // Dodane: Wyklucza foldery, których nie chcesz analizować
+  "include": ["src/**/*", "test/**/*"], // <--- ZMIANA TUTAJ
+  "exclude": ["node_modules", "dist"]
 }

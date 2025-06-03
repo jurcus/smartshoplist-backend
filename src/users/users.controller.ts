@@ -1,4 +1,3 @@
-/* eslint-disable prettier/prettier */
 import {
   Controller,
   Get,
@@ -12,7 +11,13 @@ import { AuthGuard } from '../auth/auth.guard';
 import { UsersService } from './users.service';
 import { AuthService } from '../auth/auth.service';
 import { Request } from 'express';
-import { ApiTags, ApiOperation, ApiResponse, ApiBody, ApiBearerAuth } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBody,
+  ApiBearerAuth,
+} from '@nestjs/swagger';
 
 interface AuthRequest extends Request {
   user?: { email: string; sub: number };
@@ -23,7 +28,7 @@ interface AuthRequest extends Request {
 export class UsersController {
   constructor(
     private readonly usersService: UsersService,
-    private readonly authService: AuthService,
+    private readonly authService: AuthService
   ) {}
 
   @Post('register')
@@ -39,12 +44,16 @@ export class UsersController {
       required: ['name', 'email', 'password'],
     },
   })
-  @ApiResponse({ status: 201, description: 'User registered successfully', type: Object })
+  @ApiResponse({
+    status: 201,
+    description: 'User registered successfully',
+    type: Object,
+  })
   @ApiResponse({ status: 409, description: 'Email already exists' })
   async register(
     @Body('name') name: string,
     @Body('email') email: string,
-    @Body('password') password: string,
+    @Body('password') password: string
   ) {
     return this.usersService.register(name, email, password);
   }
@@ -61,11 +70,15 @@ export class UsersController {
       required: ['email', 'password'],
     },
   })
-  @ApiResponse({ status: 200, description: 'User logged in successfully', type: Object })
+  @ApiResponse({
+    status: 200,
+    description: 'User logged in successfully',
+    type: Object,
+  })
   @ApiResponse({ status: 401, description: 'Invalid credentials' })
   async login(
     @Body('email') email: string,
-    @Body('password') password: string,
+    @Body('password') password: string
   ) {
     return this.authService.login(email, password);
   }
@@ -74,7 +87,11 @@ export class UsersController {
   @UseGuards(AuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Get user profile' })
-  @ApiResponse({ status: 200, description: 'User profile retrieved successfully', type: Object })
+  @ApiResponse({
+    status: 200,
+    description: 'User profile retrieved successfully',
+    type: Object,
+  })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   getProfile(@NestRequest() req: AuthRequest) {
     const user = req.user;

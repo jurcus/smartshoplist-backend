@@ -1,4 +1,3 @@
-/* eslint-disable prettier/prettier */
 import {
   Injectable,
   ConflictException,
@@ -13,14 +12,18 @@ import * as bcrypt from 'bcrypt';
 export class UsersService {
   constructor(
     @InjectRepository(User)
-    private usersRepository: Repository<User>,
+    private usersRepository: Repository<User>
   ) {}
 
   async findByEmail(email: string): Promise<User | null> {
     return this.usersRepository.findOne({ where: { email } });
   }
 
-  async register(name: string, email: string, password: string | null): Promise<User> {
+  async register(
+    name: string,
+    email: string,
+    password: string | null
+  ): Promise<User> {
     console.log('Registering user with email:', email);
     console.log('Input password:', password);
 

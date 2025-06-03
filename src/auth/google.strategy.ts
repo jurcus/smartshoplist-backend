@@ -8,7 +8,7 @@ import { AuthService } from './auth.service';
 export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
   constructor(
     private configService: ConfigService,
-    private authService: AuthService,
+    private authService: AuthService
   ) {
     super({
       clientID: configService.get<string>('GOOGLE_CLIENT_ID'),
@@ -19,7 +19,12 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
     });
   }
 
-  async validate(request: any, accessToken: string, refreshToken: string, profile: any) {
+  async validate(
+    request: any,
+    accessToken: string,
+    refreshToken: string,
+    profile: any
+  ) {
     try {
       const { emails, displayName } = profile;
       if (!emails || !emails.length) {
@@ -31,16 +36,23 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
       }
 
       console.log('Google profile:', { email, displayName });
-      const user = await this.authService.validateGoogleUser({ email, displayName });
+      const user = await this.authService.validateGoogleUser({
+        email,
+        displayName,
+      });
       console.log('Validated user:', user);
 
       if (!user) {
-        throw new UnauthorizedException('Nie udało się utworzyć lub znaleźć użytkownika.');
+        throw new UnauthorizedException(
+          'Nie udało się utworzyć lub znaleźć użytkownika.'
+        );
       }
       return user;
     } catch (error) {
       console.error('Google auth error:', error);
-      throw new UnauthorizedException('Błąd podczas uwierzytelniania przez Google.');
+      throw new UnauthorizedException(
+        'Błąd podczas uwierzytelniania przez Google.'
+      );
     }
   }
 }

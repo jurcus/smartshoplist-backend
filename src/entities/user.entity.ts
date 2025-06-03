@@ -1,7 +1,9 @@
-/* eslint-disable prettier/prettier */
+// src/entities/user.entity.ts
+
 import { Entity, Column, PrimaryGeneratedColumn, OneToMany } from 'typeorm';
 import { ShoppingList } from '../entities/shopping-list.entity';
-import { SharedList } from '../entities/shared-list.entity'; // Dodajemy import
+import { SharedList } from '../entities/shared-list.entity';
+import { Exclude } from 'class-transformer'; // <--- DODAJ TEN IMPORT
 
 @Entity()
 export class User {
@@ -14,12 +16,13 @@ export class User {
   @Column({ unique: true })
   email: string;
 
+  @Exclude() // <--- DODAJ TEN DEKORATOR
   @Column({ nullable: true })
-  password: string; // Dodajemy nullable: true, bo hasło nie jest wymagane przy logowaniu przez Google
+  password: string;
 
   @OneToMany(() => ShoppingList, (shoppingList) => shoppingList.user)
   shoppingLists: ShoppingList[];
 
   @OneToMany(() => SharedList, (sharedList) => sharedList.user)
-  sharedLists: SharedList[]; // Dodajemy relację
+  sharedLists: SharedList[];
 }

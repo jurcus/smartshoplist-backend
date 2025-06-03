@@ -1,3 +1,4 @@
+// src/shopping-lists/shopping-lists.controller.ts
 import {
   Controller,
   Post,
@@ -11,6 +12,8 @@ import {
   UseGuards,
   UnauthorizedException,
   BadRequestException,
+  ParseIntPipe,
+  ParseFloatPipe, // Dodajemy ParseFloatPipe dla lat/lng
 } from '@nestjs/common';
 import { ShoppingListsService } from './shopping-lists.service';
 import { SharedListsService } from './shared-lists.service';
@@ -19,6 +22,10 @@ import { UsersService } from '../users/users.service';
 import { Request } from 'express';
 import { User } from '../entities/user.entity';
 import { ApiTags, ApiOperation, ApiResponse, ApiBody, ApiBearerAuth, ApiParam, ApiQuery } from '@nestjs/swagger';
+import { CreateShoppingListDto } from './dto/create-shopping-list.dto';
+import { UpdateShoppingListDto } from './dto/update-shopping-list.dto';
+import { AddItemDto } from './dto/add-item.dto';
+import { UpdateItemDto } from './dto/update-item.dto';
 
 interface AuthRequest extends Request {
   user?: User;
@@ -37,52 +44,16 @@ export class ShoppingListsController {
   @Post()
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Create a new shopping list' })
-  @ApiBody({
-    schema: {
-      type: 'object',
-      properties: {
-        name: { type: 'string', example: 'My Shopping List' },
-        items: {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              name: { type: 'string', example: 'Milk' },
-              category: { type: 'string', example: 'Dairy' },
-              store: { type: 'string', example: 'Local Store' },
-              quantity: { type: 'number', example: 1 },
-              bought: { type: 'boolean', example: false },
-            },
-          },
-        },
-      },
-      required: ['name'],
-    },
-  })
-  @ApiResponse({ status: 201, description: 'Shopping list created successfully', type: Object })
+  @ApiBody({ type: CreateShoppingListDto })
+  @ApiResponse({ status: 201, description: 'Shopping list created successfully' })
+  @ApiResponse({ status: 400, description: 'Bad Request / Validation error' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
-  async create(@NestRequest() req: AuthRequest, @Body() body: { name: string; items: any[] }) {
+  async create(@NestRequest() req: AuthRequest, @Body() createShoppingListDto: CreateShoppingListDto) {
     const userId = req.user?.id;
     if (!userId) throw new UnauthorizedException('User not authenticated');
     const user = await this.usersService.findById(userId);
-
-    const normalizedItems = (body.items || []).map((item) => {
-      if (typeof item === 'string') {
-        console.log(`Normalizing string item: ${item}`);
-        return { name: item, category: '', store: '', quantity: 1, bought: false };
-      }
-      console.log(`Normalizing object item:`, item);
-      return {
-        name: item.name || '',
-        category: item.category || '',
-        store: item.store || '',
-        quantity: item.quantity || 1,
-        bought: item.bought ?? false,
-      };
-    });
-
-    console.log('Normalized items before sending to service:', normalizedItems);
-    return this.shoppingListsService.create(user, body.name, normalizedItems);
+    // POPRAWKA: Przekazujemy cały obiekt DTO do serwisu
+    return this.shoppingListsService.create(user, createShoppingListDto);
   }
 
   @Get()
@@ -107,11 +78,10 @@ export class ShoppingListsController {
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   async search(
     @NestRequest() req: AuthRequest,
-    @Query('name') name: string,
-    @Query('category') category: string,
-    @Query('store') store: string,
+    @Query('name') name?: string,
+    @Query('category') category?: string,
+    @Query('store') store?: string,
   ) {
-    console.log(`find-items called with query: name=${name}, category=${category}, store=${store}`);
     const userId = req.user?.id;
     if (!userId) throw new UnauthorizedException('User not authenticated');
     const user = await this.usersService.findById(userId);
@@ -121,270 +91,165 @@ export class ShoppingListsController {
   @Get(':id')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Get a specific shopping list by ID' })
-  @ApiParam({ name: 'id', type: String, description: 'Shopping list ID' })
-  @ApiResponse({ status: 200, description: 'Shopping list retrieved successfully', type: Object })
+  @ApiParam({ name: 'id', type: Number, description: 'Shopping list ID' })
+  @ApiResponse({ status: 200, description: 'Shopping list retrieved successfully' })
   @ApiResponse({ status: 400, description: 'Invalid ID format' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
-  async findOne(@NestRequest() req: AuthRequest, @Param('id') id: string) {
-    console.log(`findOne called with id: ${id}`);
+  async findOne(@NestRequest() req: AuthRequest, @Param('id', ParseIntPipe) listId: number) {
     const userId = req.user?.id;
     if (!userId) throw new UnauthorizedException('User not authenticated');
     const user = await this.usersService.findById(userId);
-    const parsedId = parseInt(id, 10);
-    if (isNaN(parsedId)) {
-      throw new BadRequestException('Invalid ID format');
-    }
-    return this.shoppingListsService.findOne(user, parsedId);
+    return this.shoppingListsService.findOne(user, listId);
   }
 
   @Put(':id')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Update a shopping list by ID' })
-  @ApiParam({ name: 'id', type: String, description: 'Shopping list ID' })
-  @ApiBody({
-    schema: {
-      type: 'object',
-      properties: {
-        name: { type: 'string', example: 'Updated Shopping List' },
-        items: {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              name: { type: 'string', example: 'Milk' },
-              category: { type: 'string', example: 'Dairy' },
-              store: { type: 'string', example: 'Local Store' },
-              quantity: { type: 'number', example: 1 },
-              bought: { type: 'boolean', example: false },
-            },
-          },
-        },
-      },
-      required: ['name'],
-    },
-  })
-  @ApiResponse({ status: 200, description: 'Shopping list updated successfully', type: Object })
-  @ApiResponse({ status: 400, description: 'Invalid ID format' })
+  @ApiParam({ name: 'id', type: Number, description: 'Shopping list ID' })
+  @ApiBody({ type: UpdateShoppingListDto })
+  @ApiResponse({ status: 200, description: 'Shopping list updated successfully' })
+  @ApiResponse({ status: 400, description: 'Invalid ID format / Validation error' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   async update(
     @NestRequest() req: AuthRequest,
-    @Param('id') id: string,
-    @Body() body: { name: string; items: any[] },
+    @Param('id', ParseIntPipe) listId: number,
+    @Body() updateShoppingListDto: UpdateShoppingListDto,
   ) {
-    console.log(`update called with id: ${id}`);
     const userId = req.user?.id;
     if (!userId) throw new UnauthorizedException('User not authenticated');
     const user = await this.usersService.findById(userId);
-
-    const normalizedItems = (body.items || []).map((item) => {
-      if (typeof item === 'string') {
-        console.log(`Normalizing string item: ${item}`);
-        return { name: item, category: '', store: '', quantity: 1, bought: false };
-      }
-      console.log(`Normalizing object item:`, item);
-      return {
-        name: item.name || '',
-        category: item.category || '',
-        store: item.store || '',
-        quantity: item.quantity || 1,
-        bought: item.bought ?? false,
-      };
-    });
-
-    console.log('Normalized items before sending to service:', normalizedItems);
-    const parsedId = parseInt(id, 10);
-    if (isNaN(parsedId)) {
-      throw new BadRequestException('Invalid ID format');
-    }
-    return this.shoppingListsService.update(user, parsedId, body.name, normalizedItems);
+    // POPRAWKA: Przekazujemy cały obiekt DTO do serwisu
+    return this.shoppingListsService.update(user, listId, updateShoppingListDto);
   }
 
   @Delete(':id')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Delete a shopping list by ID' })
-  @ApiParam({ name: 'id', type: String, description: 'Shopping list ID' })
-  @ApiResponse({ status: 200, description: 'Shopping list deleted successfully', type: Object })
+  @ApiParam({ name: 'id', type: Number, description: 'Shopping list ID' })
+  @ApiResponse({ status: 200, description: 'Shopping list deleted successfully' })
   @ApiResponse({ status: 400, description: 'Invalid ID format' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
-  async remove(@NestRequest() req: AuthRequest, @Param('id') id: string) {
-    console.log(`remove called with id: ${id}`);
+  async remove(@NestRequest() req: AuthRequest, @Param('id', ParseIntPipe) listId: number) {
     const userId = req.user?.id;
     if (!userId) throw new UnauthorizedException('User not authenticated');
     const user = await this.usersService.findById(userId);
-    const parsedId = parseInt(id, 10);
-    if (isNaN(parsedId)) {
-      throw new BadRequestException('Invalid ID format');
-    }
-    return this.shoppingListsService.remove(user, parsedId);
+    await this.shoppingListsService.remove(user, listId);
+    return { message: 'Shopping list deleted successfully' };
   }
 
   @Get(':id/nearby-stores')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Find nearby stores for a shopping list' })
-  @ApiParam({ name: 'id', type: String, description: 'Shopping list ID' })
-  @ApiQuery({ name: 'lat', type: String, description: 'Latitude', required: true })
-  @ApiQuery({ name: 'lng', type: String, description: 'Longitude', required: true })
+  @ApiParam({ name: 'id', type: Number, description: 'Shopping list ID' })
+  @ApiQuery({ name: 'lat', type: Number, description: 'Latitude', required: true })
+  @ApiQuery({ name: 'lng', type: Number, description: 'Longitude', required: true })
   @ApiResponse({ status: 200, description: 'Nearby stores retrieved successfully', type: Array })
-  @ApiResponse({ status: 400, description: 'Invalid ID format or missing latitude/longitude' })
+  @ApiResponse({ status: 400, description: 'Invalid ID format or missing/invalid latitude/longitude' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   async findNearbyStores(
     @NestRequest() req: AuthRequest,
-    @Param('id') id: string,
-    @Query('lat') lat: string,
-    @Query('lng') lng: string,
+    @Param('id', ParseIntPipe) listId: number,
+    @Query('lat', ParseFloatPipe) lat: number, // Użyj ParseFloatPipe dla współrzędnych
+    @Query('lng', ParseFloatPipe) lng: number, // Użyj ParseFloatPipe dla współrzędnych
   ) {
-    console.log('findNearbyStores controller - user:', req.user);
     const userId = req.user?.id;
     if (!userId) throw new UnauthorizedException('User not authenticated');
     const user = await this.usersService.findById(userId);
-    const parsedId = parseInt(id, 10);
-    if (isNaN(parsedId)) {
-      throw new BadRequestException('Invalid ID format');
-    }
-    if (!lat || !lng) {
-      throw new BadRequestException('Latitude and longitude are required');
-    }
-    const parsedLat = parseFloat(lat);
-    const parsedLng = parseFloat(lng);
-    if (isNaN(parsedLat) || isNaN(parsedLng)) {
-      throw new BadRequestException('Invalid latitude or longitude format');
-    }
-    return this.shoppingListsService.findNearbyStores(user, parsedId, { lat: parsedLat, lng: parsedLng });
+    return this.shoppingListsService.findNearbyStores(user, listId, { lat, lng });
   }
 
   @Post(':id/share')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Share a shopping list with another user' })
-  @ApiParam({ name: 'id', type: String, description: 'Shopping list ID' })
+  @ApiParam({ name: 'id', type: Number, description: 'Shopping list ID' })
   @ApiBody({
     schema: {
       type: 'object',
-      properties: {
-        email: { type: 'string', example: 'friend@example.com' },
-      },
+      properties: { email: { type: 'string', example: 'friend@example.com' } },
       required: ['email'],
     },
   })
-  @ApiResponse({ status: 200, description: 'Shopping list shared successfully', type: Object })
+  @ApiResponse({ status: 200, description: 'Shopping list shared successfully' })
   @ApiResponse({ status: 400, description: 'Invalid ID format or missing email' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   async shareList(
     @NestRequest() req: AuthRequest,
-    @Param('id') id: string,
+    @Param('id', ParseIntPipe) listId: number,
     @Body('email') email: string,
   ) {
     const userId = req.user?.id;
     if (!userId) throw new UnauthorizedException('User not authenticated');
-    if (!email) throw new BadRequestException('Email is required');
+    if (!email) throw new BadRequestException('Email is required'); // Można to przenieść do DTO
     const user = await this.usersService.findById(userId);
-    const parsedId = parseInt(id, 10);
-    if (isNaN(parsedId)) {
-      throw new BadRequestException('Invalid ID format');
-    }
-    await this.sharedListsService.shareList(user, parsedId, email);
-    return { message: `Shopping list ${parsedId} shared with ${email}` };
+    await this.sharedListsService.shareList(user, listId, email);
+    return { message: `Shopping list ${listId} shared with ${email}` };
   }
 
   @Delete(':id/share/:userId')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Revoke access to a shared shopping list' })
-  @ApiParam({ name: 'id', type: String, description: 'Shopping list ID' })
-  @ApiParam({ name: 'userId', type: String, description: 'User ID to revoke access for' })
-  @ApiResponse({ status: 200, description: 'Access revoked successfully', type: Object })
+  @ApiParam({ name: 'id', type: Number, description: 'Shopping list ID' })
+  @ApiParam({ name: 'userId', type: Number, description: 'User ID to revoke access for' })
+  @ApiResponse({ status: 200, description: 'Access revoked successfully' })
   @ApiResponse({ status: 400, description: 'Invalid ID format' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   async removeSharedAccess(
     @NestRequest() req: AuthRequest,
-    @Param('id') id: string,
-    @Param('userId') userId: string,
+    @Param('id', ParseIntPipe) listId: number,
+    @Param('userId', ParseIntPipe) targetUserId: number,
   ) {
     const ownerId = req.user?.id;
     if (!ownerId) throw new UnauthorizedException('User not authenticated');
-    const parsedId = parseInt(id, 10);
-    const parsedUserId = parseInt(userId, 10);
-    if (isNaN(parsedId) || isNaN(parsedUserId)) {
-      throw new BadRequestException('Invalid ID format');
-    }
     const owner = await this.usersService.findById(ownerId);
-    await this.sharedListsService.removeSharedAccess(owner, parsedId, parsedUserId);
-    return { message: `Access to shopping list ${parsedId} revoked for user ${parsedUserId}` };
+    await this.sharedListsService.removeSharedAccess(owner, listId, targetUserId);
+    return { message: `Access to shopping list ${listId} revoked for user ${targetUserId}` };
   }
 
   @Post(':id/items')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Add an item to a shopping list' })
-  @ApiParam({ name: 'id', type: String, description: 'Shopping list ID' })
-  @ApiBody({
-    schema: {
-      type: 'object',
-      properties: {
-        name: { type: 'string', example: 'Milk' },
-        category: { type: 'string', example: 'Dairy' },
-        store: { type: 'string', example: 'Local Store' },
-        quantity: { type: 'number', example: 1 },
-      },
-      required: ['name', 'quantity'],
-    },
-  })
-  @ApiResponse({ status: 201, description: 'Item added successfully', type: Object })
-  @ApiResponse({ status: 400, description: 'Invalid ID format or missing data' })
+  @ApiParam({ name: 'id', type: Number, description: 'Shopping list ID' })
+  @ApiBody({ type: AddItemDto })
+  @ApiResponse({ status: 201, description: 'Item added successfully' })
+  @ApiResponse({ status: 400, description: 'Invalid ID format or missing data / Validation error' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   async addItem(
     @NestRequest() req: AuthRequest,
-    @Param('id') id: string,
-    @Body() body: { name: string; category?: string; store?: string; quantity: number },
+    @Param('id', ParseIntPipe) listId: number,
+    @Body() addItemDto: AddItemDto,
   ) {
     const userId = req.user?.id;
     if (!userId) throw new UnauthorizedException('User not authenticated');
     const user = await this.usersService.findById(userId);
-    const parsedId = parseInt(id, 10);
-    if (isNaN(parsedId)) {
-      throw new BadRequestException('Invalid ID format');
-    }
-    return this.shoppingListsService.addItem(user, parsedId, body);
+    return this.shoppingListsService.addItem(user, listId, addItemDto);
   }
 
-  @Put(':id/items/:index')
+  @Put(':id/items/:itemId') // Używamy :itemId
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Update an item in a shopping list' })
-  @ApiParam({ name: 'id', type: String, description: 'Shopping list ID' })
-  @ApiParam({ name: 'index', type: String, description: 'Item index' })
-  @ApiBody({
-    schema: {
-      type: 'object',
-      properties: {
-        name: { type: 'string', example: 'Milk' },
-        category: { type: 'string', example: 'Dairy' },
-        store: { type: 'string', example: 'Local Store' },
-        quantity: { type: 'number', example: 1 },
-        bought: { type: 'boolean', example: true },
-      },
-    },
-  })
-  @ApiResponse({ status: 200, description: 'Item updated successfully', type: Object })
-  @ApiResponse({ status: 400, description: 'Invalid ID or index format' })
+  @ApiParam({ name: 'id', type: Number, description: 'Shopping list ID' })
+  @ApiParam({ name: 'itemId', type: Number, description: 'Item ID' })
+  @ApiBody({ type: UpdateItemDto })
+  @ApiResponse({ status: 200, description: 'Item updated successfully' })
+  @ApiResponse({ status: 400, description: 'Invalid ID or item ID format / Validation error' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   async updateItem(
     @NestRequest() req: AuthRequest,
-    @Param('id') id: string,
-    @Param('index') index: string,
-    @Body() body: { name?: string; category?: string; store?: string; quantity?: number; bought?: boolean },
+    @Param('id', ParseIntPipe) listId: number,
+    @Param('itemId', ParseIntPipe) itemId: number,
+    @Body() updateItemDto: UpdateItemDto,
   ) {
     const userId = req.user?.id;
     if (!userId) throw new UnauthorizedException('User not authenticated');
     const user = await this.usersService.findById(userId);
-    const parsedId = parseInt(id, 10);
-    const parsedIndex = parseInt(index, 10);
-    if (isNaN(parsedId) || isNaN(parsedIndex)) {
-      throw new BadRequestException('Invalid ID or index format');
-    }
-    return this.shoppingListsService.updateItem(user, parsedId, parsedIndex, body);
+    // POPRAWKA: Wywołanie poprawnej nazwy metody w serwisie
+    return this.shoppingListsService.updateItemById(user, listId, itemId, updateItemDto);
   }
 
   @Post('from-api')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Create a shopping list from Fake Store API' })
-  @ApiResponse({ status: 201, description: 'Shopping list created successfully', type: Object })
+  @ApiResponse({ status: 201, description: 'Shopping list created successfully' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   async createFromApi(@NestRequest() req: AuthRequest) {
     const userId = req.user?.id;

@@ -3,26 +3,26 @@ import eslint from '@eslint/js';
 import eslintPluginPrettierRecommended from 'eslint-plugin-prettier/recommended';
 import globals from 'globals';
 import tseslint from 'typescript-eslint';
-import eslintConfigPrettier from 'eslint-config-prettier'; // Dodajemy eslint-config-prettier
+// import eslintConfigPrettier from 'eslint-config-prettier'; // Możemy spróbować to usunąć
 
 export default tseslint.config(
   {
-    ignores: ['eslint.config.mjs', 'dist/**/*'], // Ignoruj folder dist
+    ignores: ['eslint.config.mjs', 'dist/**/*'],
   },
   eslint.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,
-  eslintPluginPrettierRecommended,
-  eslintConfigPrettier, // Dodajemy na końcu, aby wyłączyć kolidujące reguły ESLint
+  eslintPluginPrettierRecommended, // Ta linia powinna załatwić integrację z eslint-config-prettier
+  // eslintConfigPrettier, // Usunięte - eslintPluginPrettierRecommended powinno to pokrywać
   {
     languageOptions: {
       globals: {
         ...globals.node,
         ...globals.jest,
       },
-      ecmaVersion: 2020, // Zaktualizuj na nowszą wersję (ecmaVersion 5 jest bardzo stare)
+      ecmaVersion: 2020,
       sourceType: 'module',
       parserOptions: {
-        projectService: true,
+        project: true, // Zmienione z projectService: true dla nowszych wersji typescript-eslint
         tsconfigRootDir: import.meta.dirname,
       },
     },
@@ -32,7 +32,12 @@ export default tseslint.config(
       '@typescript-eslint/no-explicit-any': 'off',
       '@typescript-eslint/no-floating-promises': 'warn',
       '@typescript-eslint/no-unsafe-argument': 'warn',
-      'prettier/prettier': ['error', { endOfLine: 'auto' }], // Dodajemy opcję endOfLine
+      // Reguła prettier/prettier jest już konfigurowana przez eslintPluginPrettierRecommended
+      // Jeśli chcesz nadpisać opcje Prettiera specyficznie dla ESLint (co zwykle nie jest konieczne
+      // jeśli masz .prettierrc.json), możesz to zrobić tutaj.
+      // Na przykład, jeśli .prettierrc.json nie jest brane pod uwagę z jakiegoś powodu:
+      // 'prettier/prettier': ['error', { "singleQuote": true, "trailingComma": "all", "endOfLine": "auto" }],
+      // Ale najlepiej, aby eslint-plugin-prettier automatycznie używał konfiguracji z .prettierrc.json
     },
   }
 );

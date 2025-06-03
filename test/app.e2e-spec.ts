@@ -1,3 +1,4 @@
+// test/app.e2e-spec.ts
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
@@ -13,15 +14,16 @@ describe('UsersController (e2e)', () => {
     moduleFixture = await Test.createTestingModule({
       imports: [
         TypeOrmModule.forRoot({
+          // Użyj konfiguracji testowej bazy danych
           type: 'mysql',
-          host: 'localhost',
-          port: 3306,
-          username: 'root',
-          password: 'Krakowska44a',
-          database: 'smart_shoplist', // Używamy istniejącej bazy
-          entities: ['src/entities/*.entity.ts'],
-          synchronize: true, // Uwaga: Może modyfikować schemat bazy
-          logging: false, // Wyłączenie logów SQL dla czytelności
+          host: process.env.TEST_DB_HOST || 'localhost',
+          port: parseInt(process.env.TEST_DB_PORT || '3306', 10),
+          username: process.env.TEST_DB_USERNAME || 'root',
+          password: process.env.TEST_DB_PASSWORD || 'Krakowska44a',
+          database: process.env.TEST_DB_DATABASE || 'smart_shoplist_test', // Idealnie inna baza danych do testów
+          entities: ['src/entities/*.entity.ts'], // Upewnij się, że ścieżka jest poprawna
+          synchronize: true,
+          logging: false,
         }),
         AppModule,
       ],
@@ -29,7 +31,7 @@ describe('UsersController (e2e)', () => {
 
     app = moduleFixture.createNestApplication();
     await app.init();
-  }, 20000); // Timeout 20 sekund dla inicjalizacji bazy
+  }, 20000);
 
   afterAll(async () => {
     if (app) {
@@ -38,19 +40,23 @@ describe('UsersController (e2e)', () => {
   });
 
   beforeEach(async () => {
-    // Czyść tabele przed każdym testem, aby uniknąć konfliktów
     const dataSource = moduleFixture.get<DataSource>(getDataSourceToken());
     const queryRunner = dataSource.createQueryRunner();
     await queryRunner.connect();
-    await queryRunner.query('DELETE FROM shared_list');
-    await queryRunner.query('DELETE FROM shopping_list');
-    await queryRunner.query('DELETE FROM user');
+    // Kolejność usuwania jest ważna ze względu na klucze obce
+    await queryRunner.query('SET FOREIGN_KEY_CHECKS = 0;'); // Wyłącz sprawdzanie kluczy obcych na czas czyszczenia
+    await queryRunner.query('DELETE FROM `shared_list`;'); // Użyj backticków, jeśli nazwa tabeli jest słowem kluczowym
+    await queryRunner.query('DELETE FROM `shopping_list_item`;'); // <--- DODAJ CZYSZCZENIE NOWEJ TABELI
+    await queryRunner.query('DELETE FROM `shopping_list`;');
+    await queryRunner.query('DELETE FROM `user`;');
+    await queryRunner.query('SET FOREIGN_KEY_CHECKS = 1;'); // Włącz z powrotem sprawdzanie kluczy obcych
     await queryRunner.release();
   });
 
   it('POST /users/register should register a new user', async () => {
     const response = await request(app.getHttpServer())
-      .post('/users/register')
+      .post('/users/register') // Upewnij się, że endpoint jest zgodny z globalnym prefixem /api (jeśli jest stosowany w testach)
+      // Jeśli prefix jest globalny, powinno być /api/users/register
       .send({
         name: 'Test User',
         email: 'test@example.com',
@@ -59,15 +65,18 @@ describe('UsersController (e2e)', () => {
       .expect(201);
 
     expect(response.body).toHaveProperty('id');
+    // Sprawdź, czy pozostałe pola są zwracane zgodnie z oczekiwaniami (bez hasła)
+    // UsersService.register zwraca cały obiekt użytkownika,
+    // ClassSerializerInterceptor powinien usunąć hasło
+    // Zakładając, że register zwraca { id, email, name }
     expect(response.body.email).toBe('test@example.com');
     expect(response.body.name).toBe('Test User');
-    expect(response.body.password).toBeDefined();
+    expect(response.body.password).toBeUndefined(); // Hasło nie powinno być zwracane
   });
 
   it('POST /users/register should return 409 if email already exists', async () => {
-    // Pierwsza rejestracja
     await request(app.getHttpServer())
-      .post('/users/register')
+      .post('/users/register') // Zastosuj /api jeśli trzeba
       .send({
         name: 'Test User',
         email: 'test@example.com',
@@ -75,14 +84,13 @@ describe('UsersController (e2e)', () => {
       })
       .expect(201);
 
-    // Powtórna rejestracja z tym samym emailem
     await request(app.getHttpServer())
-      .post('/users/register')
+      .post('/users/register') // Zastosuj /api jeśli trzeba
       .send({
-        name: 'Test User',
-        email: 'test@example.com',
-        password: 'password123',
+        name: 'Test User 2',
+        email: 'test@example.com', // Ten sam email
+        password: 'password456',
       })
-      .expect(409);
+      .expect(409); // UsersService.register rzuca ConflictException
   });
 });

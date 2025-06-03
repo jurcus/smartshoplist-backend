@@ -66,11 +66,13 @@ describe('AuthGuard', () => {
     } as User;
 
     // Symulujemy, że Passport zwraca true i ustawia użytkownika
-    mockSuperCanActivate.mockImplementation(async (context: ExecutionContext) => {
-      const req = context.switchToHttp().getRequest();
-      req.user = user;
-      return true;
-    });
+    mockSuperCanActivate.mockImplementation(
+      async (context: ExecutionContext) => {
+        const req = context.switchToHttp().getRequest();
+        req.user = user;
+        return true;
+      }
+    );
 
     const result = await authGuard.canActivate(mockContext);
     expect(result).toBe(true);

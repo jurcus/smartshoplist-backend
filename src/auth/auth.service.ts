@@ -8,30 +8,39 @@ import { User } from '../entities/user.entity';
 export class AuthService {
   constructor(
     private usersService: UsersService,
-    private jwtService: JwtService,
+    private jwtService: JwtService
   ) {}
 
-  async validateGoogleUser(details: { email: string; displayName: string }): Promise<User> {
+  async validateGoogleUser(details: {
+    email: string;
+    displayName: string;
+  }): Promise<User> {
     console.log('Validating Google user:', details);
     let user = await this.usersService.findByEmail(details.email);
-    
+
     if (!user) {
       console.log('Creating new user for Google auth:', details);
-      user = await this.usersService.register(details.displayName, details.email, null);
+      user = await this.usersService.register(
+        details.displayName,
+        details.email,
+        null
+      );
     } else {
       console.log('Found existing user:', user);
     }
-    
+
     return user;
   }
 
-  async loginGoogle(user: User): Promise<{ access_token: string; user: Partial<User> }> {
+  async loginGoogle(
+    user: User
+  ): Promise<{ access_token: string; user: Partial<User> }> {
     console.log('Generating token for Google user:', user);
     const payload = { email: user.email, sub: user.id };
     const access_token = this.jwtService.sign(payload);
-    
+
     console.log('Generated token payload:', payload);
-    
+
     return {
       access_token,
       user: {
@@ -42,7 +51,10 @@ export class AuthService {
     };
   }
 
-  async login(email: string, password: string): Promise<{ access_token: string; user: Partial<User> }> {
+  async login(
+    email: string,
+    password: string
+  ): Promise<{ access_token: string; user: Partial<User> }> {
     const user = await this.usersService.findByEmail(email);
     if (!user) {
       throw new UnauthorizedException('Invalid credentials');

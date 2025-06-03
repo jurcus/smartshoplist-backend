@@ -7,7 +7,9 @@ export class SharedList {
   @PrimaryGeneratedColumn()
   id: number;
 
-  @ManyToOne(() => ShoppingList, (shoppingList) => shoppingList.sharedWith, { onDelete: 'CASCADE' })
+  @ManyToOne(() => ShoppingList, (shoppingList) => shoppingList.sharedWith, {
+    onDelete: 'CASCADE',
+  })
   shoppingList: ShoppingList;
 
   @Column()

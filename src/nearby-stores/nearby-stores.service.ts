@@ -4,7 +4,8 @@ import axios from 'axios';
 
 @Injectable()
 export class NearbyStoresService {
-  private readonly googleMapsApiUrl = 'https://maps.googleapis.com/maps/api/place/nearbysearch/json';
+  private readonly googleMapsApiUrl =
+    'https://maps.googleapis.com/maps/api/place/nearbysearch/json';
   private readonly apiKey: string;
 
   constructor(private configService: ConfigService) {
@@ -14,7 +15,10 @@ export class NearbyStoresService {
     }
   }
 
-  async findNearbyStores(location: { lat: number; lng: number }, categories: string[]): Promise<any[]> {
+  async findNearbyStores(
+    location: { lat: number; lng: number },
+    categories: string[]
+  ): Promise<any[]> {
     try {
       const categoryToPlaceType: { [key: string]: string } = {
         "men's clothing": 'clothing_store',
@@ -24,7 +28,13 @@ export class NearbyStoresService {
       };
 
       // Usuwamy domyślny typ 'store' i bierzemy tylko zdefiniowane typy
-      const placeTypes = [...new Set(categories.map(cat => categoryToPlaceType[cat]).filter(type => type))];
+      const placeTypes = [
+        ...new Set(
+          categories
+            .map((cat) => categoryToPlaceType[cat])
+            .filter((type) => type)
+        ),
+      ];
       console.log('Place types for Google Maps API:', placeTypes);
 
       if (!placeTypes.length) {
@@ -64,7 +74,10 @@ export class NearbyStoresService {
       console.log('Found stores:', stores);
       return stores;
     } catch (error) {
-      console.error(`Błąd podczas pobierania pobliskich sklepów z Google Maps API:`, error.message);
+      console.error(
+        `Błąd podczas pobierania pobliskich sklepów z Google Maps API:`,
+        error.message
+      );
       return [];
     }
   }

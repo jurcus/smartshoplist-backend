@@ -1,6 +1,14 @@
-import { Entity, Column, PrimaryGeneratedColumn, ManyToOne, OneToMany } from 'typeorm';
-import { User } from '../entities/user.entity';
-import { SharedList } from '../entities/shared-list.entity';
+// src/entities/shopping-list.entity.ts
+import {
+  Entity,
+  Column,
+  PrimaryGeneratedColumn,
+  ManyToOne,
+  OneToMany,
+} from 'typeorm';
+import { User } from './user.entity';
+import { SharedList } from './shared-list.entity';
+import { ShoppingListItem } from './shopping-list-item.entity'; // <--- DODAJ TEN IMPORT
 
 @Entity()
 export class ShoppingList {
@@ -10,8 +18,9 @@ export class ShoppingList {
   @Column()
   name: string;
 
-  @Column('text', { nullable: true })
-  itemsSerialized: string;
+  // Usunięte: itemsSerialized i get/set items
+  // @Column('text', { nullable: true })
+  // itemsSerialized: string;
 
   @Column({ type: 'enum', enum: ['api', 'manual'], default: 'manual' })
   source: 'api' | 'manual';
@@ -22,11 +31,10 @@ export class ShoppingList {
   @OneToMany(() => SharedList, (sharedList) => sharedList.shoppingList)
   sharedWith: SharedList[];
 
-  get items(): { name: string; category: string; store: string; quantity: number; bought: boolean }[] {
-    return this.itemsSerialized ? JSON.parse(this.itemsSerialized) : [];
-  }
-
-  set items(value: { name: string; category: string; store: string; quantity: number; bought: boolean }[]) {
-    this.itemsSerialized = JSON.stringify(value);
-  }
+  // Nowa relacja do ShoppingListItem
+  @OneToMany(() => ShoppingListItem, (item) => item.shoppingList, {
+    cascade: true,
+    eager: false,
+  })
+  items: ShoppingListItem[]; // <--- ZMIANA TUTAJ
 }
