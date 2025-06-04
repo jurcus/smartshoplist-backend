@@ -2,7 +2,7 @@
 /* eslint-disable prettier/prettier */
 import { Injectable, NotFoundException, UnauthorizedException, InternalServerErrorException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource } from 'typeorm';
+import { Repository, DataSource, FindManyOptions, FindOptionsWhere } from 'typeorm'; // Dodano FindManyOptions, FindOptionsWhere
 import { ShoppingList } from '../entities/shopping-list.entity';
 import { User } from '../entities/user.entity';
 import { ShoppingListItem } from '../entities/shopping-list-item.entity';
@@ -10,10 +10,18 @@ import { PromotionsService } from '../promotions/promotions.service';
 import { NearbyStoresService } from '../nearby-stores/nearby-stores.service';
 import { SharedListsService } from './shared-lists.service';
 import axios from 'axios';
-import { CreateShoppingListDto } from './dto/create-shopping-list.dto'; // Poprawiony import
-import { UpdateShoppingListDto } from './dto/update-shopping-list.dto'; // Poprawiony import
-import { AddItemDto } from './dto/add-item.dto'; // Poprawny import
-import { UpdateItemDto } from './dto/update-item.dto'; // Poprawny import
+import { CreateShoppingListDto } from './dto/create-shopping-list.dto';
+import { UpdateShoppingListDto } from './dto/update-shopping-list.dto';
+import { AddItemDto } from './dto/add-item.dto';
+import { UpdateItemDto } from './dto/update-item.dto';
+import { ShoppingListItemInputDto } from './dto/shopping-list-item-input.dto';
+
+// Definicja dla filtrów i sortowania w findAll
+export interface FindAllShoppingListsOptions {
+  isFavorite?: boolean;
+  sortBy?: 'name' | 'createdAt' | 'updatedAt' | 'isFavorite';
+  sortOrder?: 'ASC' | 'DESC';
+}
 
 @Injectable()
 export class ShoppingListsService {
@@ -28,27 +36,31 @@ export class ShoppingListsService {
     private dataSource: DataSource,
   ) {}
 
-  // Definicja typu dla ItemInputDto, jeśli nie importujesz go z DTO (ale powinniśmy używać DTO)
-  // Zmieniamy rawItems na bardziej generyczny typ, bo może przyjść string lub obiekt
-  private _normalizeAndCreateItemEntities(rawItems: (string | AddItemDto | UpdateItemDto)[]): ShoppingListItem[] {
+  // Zmieniamy typ rawItems, aby odzwierciedlał dane wejściowe z create/update listy
+  // ShoppingListItemInputDto ma `name: string` (nieopcjonalne)
+  // AddItemDto (używane w createFromApi) również ma `name: string` (nieopcjonalne)
+  private _normalizeAndCreateItemEntities(rawItems: (string | ShoppingListItemInputDto | AddItemDto)[]): ShoppingListItem[] {
     return (rawItems || []).map((itemInput) => {
-      const newItem = this.shoppingListItemRepository.create(); // Użyj create z repozytorium
+      const newItem = this.shoppingListItemRepository.create();
       if (typeof itemInput === 'string') {
         newItem.name = itemInput;
         newItem.category = '';
         newItem.store = '';
         newItem.quantity = 1;
         newItem.bought = false;
-      } else { // Zakładamy, że itemInput to AddItemDto lub UpdateItemDto lub podobny obiekt
-        newItem.name = itemInput.name!; // Założenie: name zawsze będzie w obiekcie itemu
+      } else {
+        // Tutaj itemInput to ShoppingListItemInputDto lub AddItemDto
+        newItem.name = itemInput.name; // name jest teraz na pewno stringiem
         newItem.category = itemInput.category || '';
         newItem.store = itemInput.store || '';
         newItem.quantity = itemInput.quantity === undefined ? 1 : itemInput.quantity;
-        // Sprawdzamy, czy 'bought' istnieje i jest booleanem, inaczej domyślnie false
-        if ('bought' in itemInput && typeof itemInput.bought === 'boolean') {
+        
+        // Sprawdzamy 'bought' - AddItemDto ma je opcjonalne, ShoppingListItemInputDto też.
+        // Encja ShoppingListItem ma default false.
+        if (typeof itemInput.bought === 'boolean') {
           newItem.bought = itemInput.bought;
         } else {
-          newItem.bought = false;
+          newItem.bought = false; 
         }
       }
       return newItem;
@@ -58,19 +70,22 @@ export class ShoppingListsService {
   private async transformShoppingListWithPromotions(list: ShoppingList): Promise<any> {
     const itemsToProcess = list.items || [];
     try {
-      const itemsWithPromotions = await this.promotionsService.getPromotionsForList(
-        itemsToProcess.map(item => ({ name: item.name, category: item.category }))
-      );
-      const hydratedItems = itemsToProcess.map(item => {
-        const promotionForItem = itemsWithPromotions.find(pItem => pItem.name === item.name && pItem.category === item.category);
+      const promotionCheckPayload = itemsToProcess.map(item => ({ name: item.name, category: item.category }));
+      const itemsWithPromotionsData = await this.promotionsService.getPromotionsForList(promotionCheckPayload);
+      
+      const hydratedItems = itemsToProcess.map(itemEntity => {
+        const promotionData = itemsWithPromotionsData.find(
+          pItem => pItem.name === itemEntity.name && pItem.category === itemEntity.category
+        );
         return {
-          ...item,
-          promotions: promotionForItem ? promotionForItem.promotions : [],
+          ...itemEntity,
+          promotions: promotionData ? promotionData.promotions : [],
         };
       });
       return { ...list, items: hydratedItems };
     } catch (error) {
-      console.error(`Błąd podczas pobierania promocji dla listy ${list.name}:`, error.message);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      console.error(`Błąd podczas pobierania promocji dla listy ${list.name}:`, errorMessage);
       return { ...list, items: itemsToProcess.map(item => ({ ...item, promotions: [] })) };
     }
   }
@@ -80,51 +95,126 @@ export class ShoppingListsService {
       name: createShoppingListDto.name,
       user,
       source: 'manual',
+      isFavorite: false,
     });
+    // createShoppingListDto.items to (string | ShoppingListItemInputDto)[] | undefined
+    // To jest kompatybilne z (string | ShoppingListItemInputDto | AddItemDto)[]
     shoppingList.items = this._normalizeAndCreateItemEntities(createShoppingListDto.items || []);
     const savedList = await this.shoppingListsRepository.save(shoppingList);
     return this.transformShoppingListWithPromotions(savedList);
+  }
+  
+  async toggleFavorite(userId: number, listId: number, isFavorite: boolean): Promise<ShoppingList> {
+    const list = await this.shoppingListsRepository.findOne({
+      where: { id: listId, user: { id: userId } },
+      relations: ['user', 'items', 'sharedWith', 'sharedWith.user'],
+    });
+
+    if (!list) {
+      throw new NotFoundException(`Shopping list with ID ${listId} not found or you are not the owner.`);
+    }
+
+    list.isFavorite = isFavorite;
+    await this.shoppingListsRepository.save(list);
+    return list;
   }
 
   async createFromApi(user: User): Promise<any> {
     const response = await axios.get('https://fakestoreapi.com/products');
     const products = response.data.slice(0, 5);
-    const rawItems: AddItemDto[] = products.map((product: any) => ({
+    const rawItemsForNormalization: AddItemDto[] = products.map((product: any) => ({ // Używamy AddItemDto, który ma name jako string
       name: product.title,
       category: product.category,
       store: 'Fake Store',
       quantity: 1,
-      bought: false,
+      bought: false, // AddItemDto ma opcjonalne bought, więc tu ustawiamy jawnie
     }));
+
     const shoppingList = this.shoppingListsRepository.create({
       name: 'Lista z Fake Store',
       user,
       source: 'api',
+      isFavorite: false,
     });
-    shoppingList.items = this._normalizeAndCreateItemEntities(rawItems);
+    shoppingList.items = this._normalizeAndCreateItemEntities(rawItemsForNormalization);
     const savedList = await this.shoppingListsRepository.save(shoppingList);
     return this.transformShoppingListWithPromotions(savedList);
   }
 
-  async findAll(user: User): Promise<any[]> {
-    const ownLists = await this.shoppingListsRepository.find({
-      where: { user: { id: user.id } },
-      relations: ['items', 'user', 'sharedWith', 'sharedWith.user'],
-    });
+  async findAll(user: User, options?: FindAllShoppingListsOptions): Promise<any[]> {
+    const whereClause: FindOptionsWhere<ShoppingList> = { user: { id: user.id } };
+    const orderClause: FindManyOptions<ShoppingList>['order'] = {};
+
+    if (options?.isFavorite !== undefined) {
+      whereClause.isFavorite = options.isFavorite;
+    }
+
+    if (options?.sortBy && options?.sortOrder) {
+      orderClause[options.sortBy] = options.sortOrder;
+    } else {
+        orderClause.createdAt = 'DESC';
+    }
+
+    const findOptions: FindManyOptions<ShoppingList> = {
+        where: whereClause,
+        relations: ['items', 'user', 'sharedWith', 'sharedWith.user'],
+        order: orderClause,
+    };
+    
+    const ownLists = await this.shoppingListsRepository.find(findOptions);
+    
     const sharedListEntities = await this.sharedListsService.getSharedLists(user);
-    const sharedLists = await Promise.all(sharedListEntities.map(sl =>
-      this.shoppingListsRepository.findOne({
-        where: { id: sl.id },
-        relations: ['items', 'user', 'sharedWith', 'sharedWith.user']
-      })
-    ));
-    const allLists = [...ownLists, ...sharedLists.filter(list => list !== null)] as ShoppingList[];
+    const sharedListsDetails = await Promise.all(
+        (sharedListEntities || []).map(async sl => {
+            // Przygotuj warunki wyszukiwania dla udostępnionych list, jeśli są filtry/sortowanie
+            const sharedWhere: FindOptionsWhere<ShoppingList> = { id: sl.id };
+            if (options?.isFavorite !== undefined) {
+              // Ulubione jest cechą listy właściciela, więc nie filtrujemy tu, chyba że logika biznesowa tego wymaga inaczej
+              // sharedWhere.isFavorite = options.isFavorite;
+            }
+
+            return this.shoppingListsRepository.findOne({
+              where: sharedWhere,
+              relations: ['items', 'user', 'sharedWith', 'sharedWith.user'],
+              // order: orderClause, // Można dodać sortowanie, jeśli jest potrzebne spójne dla wszystkich
+            });
+        }
+      )
+    );
+    
+    let allLists = [...ownLists, ...sharedListsDetails.filter(list => list !== null)] as ShoppingList[];
+
+    // Jeśli sortowanie nie zostało w pełni zastosowane na poziomie DB dla połączonych list,
+    // można je wykonać tutaj na całej tablicy 'allLists' przed transformacją.
+    // Na przykład, jeśli sortOrder i sortBy są zdefiniowane:
+    if (options?.sortBy && options?.sortOrder) {
+        allLists.sort((a, b) => {
+            const valA = a[options.sortBy!]; // Dodano ! bo wiemy, że sortBy jest zdefiniowane
+            const valB = b[options.sortBy!];
+
+            if (typeof valA === 'number' && typeof valB === 'number') {
+                return options.sortOrder === 'ASC' ? valA - valB : valB - valA;
+            }
+            if (typeof valA === 'boolean' && typeof valB === 'boolean') {
+                 // false (0) < true (1)
+                const boolA = valA ? 1 : 0;
+                const boolB = valB ? 1 : 0;
+                return options.sortOrder === 'ASC' ? boolA - boolB : boolB - boolA;
+            }
+            // Domyślnie sortuj jako stringi lub daty
+            if (valA < valB) return options.sortOrder === 'ASC' ? -1 : 1;
+            if (valA > valB) return options.sortOrder === 'ASC' ? 1 : -1;
+            return 0;
+        });
+    }
+
+
     return Promise.all(allLists.map((list) => this.transformShoppingListWithPromotions(list)));
   }
 
-  async findOne(user: User, id: number): Promise<any> {
+  async findOne(user: User, listId: number): Promise<any> {
     const shoppingList = await this.shoppingListsRepository.findOne({
-      where: { id },
+      where: { id: listId },
       relations: ['user', 'items', 'sharedWith', 'sharedWith.user'],
     });
     if (!shoppingList) {
@@ -141,27 +231,23 @@ export class ShoppingListsService {
   async addItem(user: User, listId: number, addItemDto: AddItemDto): Promise<any> {
     const shoppingListEntity = await this.shoppingListsRepository.findOne({
         where: { id: listId },
-        relations: ['user', 'sharedWith'] // Nie musimy tu ładować 'items', bo dodajemy nowy
+        relations: ['user', 'sharedWith'] 
     });
-    if (!shoppingListEntity) {
-      throw new NotFoundException('Lista zakupów nie została znaleziona');
-    }
+    if (!shoppingListEntity) throw new NotFoundException('Lista zakupów nie została znaleziona');
+
     const isOwner = shoppingListEntity.user.id === user.id;
     const isShared = shoppingListEntity.sharedWith?.some((shared) => shared.userId === user.id);
-    if (!isOwner && !isShared) {
-      throw new UnauthorizedException('Nie masz uprawnień do modyfikacji tej listy zakupów');
-    }
+    if (!isOwner && !isShared) throw new UnauthorizedException('Nie masz uprawnień do modyfikacji tej listy zakupów');
+
     const newItemEntity = this.shoppingListItemRepository.create({
       name: addItemDto.name,
       category: addItemDto.category || '',
       store: addItemDto.store || '',
       quantity: addItemDto.quantity === undefined ? 1 : addItemDto.quantity,
-      bought: false, // Zawsze false przy dodawaniu nowego itemu
+      bought: addItemDto.bought ?? false, 
       shoppingList: shoppingListEntity,
     });
     await this.shoppingListItemRepository.save(newItemEntity);
-    // Po zapisie nowego itemu, shoppingListEntity.items nie jest automatycznie aktualizowane,
-    // więc musimy ponownie załadować listę.
     const updatedList = await this.shoppingListsRepository.findOne({
         where: {id: listId},
         relations: ['user', 'items', 'sharedWith', 'sharedWith.user']
@@ -176,45 +262,52 @@ export class ShoppingListsService {
     itemId: number,
     updateItemDto: UpdateItemDto,
   ): Promise<any> {
-    // Najpierw sprawdź, czy lista istnieje i czy użytkownik ma do niej dostęp
     const shoppingListEntity = await this.shoppingListsRepository.findOne({
         where: { id: listId },
-        relations: ['user', 'sharedWith'] // Nie potrzebujemy 'items' do tej weryfikacji
+        relations: ['user', 'sharedWith']
     });
     if (!shoppingListEntity) throw new NotFoundException('Lista zakupów nie została znaleziona');
 
     const isOwner = shoppingListEntity.user.id === user.id;
     const isShared = shoppingListEntity.sharedWith?.some((shared) => shared.userId === user.id);
-    if (!isOwner && !isShared) {
-      throw new UnauthorizedException('Nie masz uprawnień do modyfikacji tej listy zakupów');
-    }
+    if (!isOwner && !isShared) throw new UnauthorizedException('Nie masz uprawnień do modyfikacji tej listy zakupów');
 
-    // Znajdź item do aktualizacji, upewniając się, że należy do tej listy
     const itemToUpdate = await this.shoppingListItemRepository.findOne({
       where: { id: itemId, shoppingList: { id: listId } }
     });
-
-    if (!itemToUpdate) {
-      throw new NotFoundException(`Item with ID ${itemId} not found in list ${listId}`);
-    }
+    if (!itemToUpdate) throw new NotFoundException(`Item with ID ${itemId} not found in list ${listId}`);
     
-    // Zastosuj aktualizacje z DTO
-    if (updateItemDto.name !== undefined) itemToUpdate.name = updateItemDto.name;
-    if (updateItemDto.category !== undefined) itemToUpdate.category = updateItemDto.category;
-    if (updateItemDto.store !== undefined) itemToUpdate.store = updateItemDto.store;
-    if (updateItemDto.quantity !== undefined) itemToUpdate.quantity = updateItemDto.quantity;
-    if (updateItemDto.bought !== undefined) itemToUpdate.bought = updateItemDto.bought;
+    Object.assign(itemToUpdate, updateItemDto);
 
     await this.shoppingListItemRepository.save(itemToUpdate);
-
-    // Załaduj zaktualizowaną listę, aby zwrócić ją z promocjami
     const updatedList = await this.shoppingListsRepository.findOne({
         where: {id: listId},
         relations: ['user', 'items', 'sharedWith', 'sharedWith.user']
     });
     if (!updatedList) throw new InternalServerErrorException('Nie udało się odświeżyć listy po aktualizacji elementu');
-    
     return this.transformShoppingListWithPromotions(updatedList);
+  }
+
+  async deleteItemFromList(user: User, listId: number, itemId: number): Promise<void> {
+    const shoppingListEntity = await this.shoppingListsRepository.findOne({
+      where: { id: listId },
+      relations: ['user', 'sharedWith'],
+    });
+    if (!shoppingListEntity) throw new NotFoundException(`Shopping list with ID ${listId} not found.`);
+    const isOwner = shoppingListEntity.user.id === user.id;
+    const isSharedWithRights = shoppingListEntity.sharedWith?.some(
+      (shared) => shared.userId === user.id
+    );
+    if (!isOwner && !isSharedWithRights) {
+      throw new UnauthorizedException('You do not have permission to modify this shopping list.');
+    }
+    const itemToDelete = await this.shoppingListItemRepository.findOne({
+      where: { id: itemId, shoppingList: { id: listId } },
+    });
+    if (!itemToDelete) {
+      throw new NotFoundException(`Item with ID ${itemId} not found in shopping list ${listId}.`);
+    }
+    await this.shoppingListItemRepository.remove(itemToDelete);
   }
 
   async update(user: User, listId: number, updateShoppingListDto: UpdateShoppingListDto): Promise<any> {
@@ -233,28 +326,22 @@ export class ShoppingListsService {
       if (!isOwner && !isShared) throw new UnauthorizedException('Nie masz uprawnień do modyfikacji tej listy zakupów');
 
       shoppingList.name = updateShoppingListDto.name;
-      
-      // Usuń istniejące itemy powiązane z tą listą
-      if (shoppingList.items && shoppingList.items.length > 0) {
-        await queryRunner.manager.remove(ShoppingListItem, shoppingList.items);
+      // Dodajemy obsługę isFavorite, jeśli jest w DTO
+      if (updateShoppingListDto.isFavorite !== undefined) {
+        shoppingList.isFavorite = updateShoppingListDto.isFavorite;
       }
       
-      // Stwórz nowe encje itemów i przypisz je do listy
-      const newItemEntities = this._normalizeAndCreateItemEntities(updateShoppingListDto.items || []);
-      // shoppingList.items = newItemEntities; // To powinno wystarczyć, jeśli cascade jest ustawione
-      // Jednakże, aby jawnie powiązać itemy z listą przed zapisem w transakcji dla queryRunner.manager.save(ShoppingListItem, item)
-      // musimy je przypisać. W przypadku `queryRunner.manager.save(ShoppingList, shoppingList)` z `cascade:true`,
-      // TypeORM powinien sam obsłużyć powiązania.
+      if (shoppingList.items && shoppingList.items.length > 0) {
+        await queryRunner.manager.remove(shoppingList.items);
+      }
       
-      // Bezpośrednie przypisanie do shoppingList.items powinno działać z cascade:true na ShoppingList.items
+      const newItemEntities = this._normalizeAndCreateItemEntities(updateShoppingListDto.items || []);
       shoppingList.items = newItemEntities; 
       
-      // Zapisz zmodyfikowaną listę zakupów (TypeORM z cascade:true zajmie się itemami)
-      await queryRunner.manager.save(ShoppingList, shoppingList);
+      await queryRunner.manager.save(shoppingList);
       
       await queryRunner.commitTransaction();
 
-      // Musimy ponownie załadować listę z repozytorium, aby uzyskać itemy z ID i relacjami
       const reloadedList = await this.shoppingListsRepository.findOne({
           where: {id: listId},
           relations: ['user', 'items', 'sharedWith', 'sharedWith.user']
@@ -263,7 +350,8 @@ export class ShoppingListsService {
       return this.transformShoppingListWithPromotions(reloadedList);
     } catch (err) {
       await queryRunner.rollbackTransaction();
-      console.error("Błąd podczas aktualizacji listy zakupów:", err);
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error during update';
+      console.error("Błąd podczas aktualizacji listy zakupów:", errorMessage, err);
       if (err instanceof NotFoundException || err instanceof UnauthorizedException) throw err;
       throw new InternalServerErrorException('Wystąpił błąd podczas aktualizacji listy zakupów.');
     } finally {
@@ -280,12 +368,14 @@ export class ShoppingListsService {
       relations: ['items', 'user'],
     });
     const sharedListEntities = await this.sharedListsService.getSharedLists(user);
-    const sharedListsData = await Promise.all(sharedListEntities.map(sl =>
-      this.shoppingListsRepository.findOne({
-        where: { id: sl.id },
-        relations: ['items', 'user', 'sharedWith', 'sharedWith.user']
-      })
-    ));
+    const sharedListsData = await Promise.all(
+      (sharedListEntities || []).map(sl =>
+        this.shoppingListsRepository.findOne({
+          where: { id: sl.id },
+          relations: ['items', 'user', 'sharedWith', 'sharedWith.user']
+        })
+      )
+    );
     const allLists = [...ownLists, ...sharedListsData.filter(list => list !== null)] as ShoppingList[];
 
     const results = await Promise.all(
@@ -305,7 +395,8 @@ export class ShoppingListsService {
           });
           return { listId: list.id, listName: list.name, items: finalFilteredItems };
         } catch (error) {
-          console.error(`Błąd podczas pobierania promocji dla wyszukiwanych itemów z listy ${list.name}:`, error.message);
+          const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+          console.error(`Błąd podczas pobierania promocji dla wyszukiwanych itemów z listy ${list.name}:`, errorMessage);
           return { listId: list.id, listName: list.name, items: filteredItems.map(item => ({ ...item, promotions: [] })) };
         }
       }),
@@ -340,21 +431,18 @@ export class ShoppingListsService {
     if (!isOwner && !isShared) {
       throw new UnauthorizedException('You do not have permission to access this shopping list');
     }
-    const itemsForPromoCheck = (shoppingList.items || []).map(item => ({ name: item.name, category: item.category }));
-    const itemsWithPromotions = await this.promotionsService.getPromotionsForList(itemsForPromoCheck);
-    const categories = [...new Set(itemsWithPromotions.flatMap(item => {
-      // Pierwszeństwo ma kategoria z itemu (ShoppingListItem), jeśli istnieje
-      const originalItem = shoppingList.items.find(i => i.name === item.name && i.category === item.category);
-      if (originalItem && originalItem.category) {
-        return originalItem.category;
-      }
-      // Jeśli nie, próbuj z promocji (jeśli kategoria w promocji jest użyteczna)
-      const promo = item.promotions && item.promotions[0];
-      if (promo && promo.category) return promo.category;
-      return []; // Jeśli brak kategorii, nie dodawaj niczego
-    }).filter(category => category))]; // Usuń puste/null/undefined kategorie
+    
+    const itemsForCategoryExtraction = shoppingList.items || [];
+    const categories = [...new Set(
+      itemsForCategoryExtraction.map(item => item.category).filter(category => !!category)
+    )];
 
-    if (!categories.length) return [];
+    if (!categories.length) {
+      console.log('No categories found in shopping list items for nearby stores');
+      return [];
+    }
+    
+    console.log('Categories for nearby stores (from list items):', categories);
     return this.nearbyStoresService.findNearbyStores(location, categories);
   }
 }

@@ -12,6 +12,7 @@ import { UsersModule } from './users/users.module';
 import { AuthModule } from './auth/auth.module';
 import { ShoppingListsModule } from './shopping-lists/shopping-lists.module';
 import { NearbyStoresModule } from './nearby-stores/nearby-stores.module';
+import { ReceiptProcessingModule } from './receipt-processing/receipt-processing.module';
 import * as Joi from 'joi'; // <--- DODAJ TEN IMPORT
 
 @Module({
@@ -68,6 +69,7 @@ import * as Joi from 'joi'; // <--- DODAJ TEN IMPORT
     PromotionsModule,
     ShoppingListsModule,
     NearbyStoresModule,
+    ReceiptProcessingModule,
   ],
   controllers: [],
   providers: [],
